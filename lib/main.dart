@@ -20,6 +20,7 @@ class App extends StatelessWidget with PortraitModeStatelessMixin {
     return MaterialApp(
       title: "GetItUploaded",
       theme: ThemeData(
+        primarySwatch: Colors.deepOrange,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
       debugShowCheckedModeBanner: false,
