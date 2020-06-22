@@ -9,11 +9,13 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get_it_uploaded/values/values.dart';
 import 'package:get_it_uploaded/functions/queryPermissions.dart';
 
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:share/share.dart';
 
 class UploaderWidget extends StatefulWidget {
@@ -24,12 +26,13 @@ class UploaderWidget extends StatefulWidget {
 class UploaderWidgetState extends State<UploaderWidget> {
   bool permissionsGranted = false;
 
-  File pickedFile = null;
-  CancelToken cancelToken = null;
+  File pickedFile;
+  CancelToken cancelToken;
   int totalBytes = -1;
   int sentBytes = 0;
 
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _platform = MethodChannel("com.limitedeternity.methodChannel");
 
   @override
   void initState() {
@@ -39,7 +42,86 @@ class UploaderWidgetState extends State<UploaderWidget> {
       setState(() {
         permissionsGranted = true;
       });
+    }).then((void _) async {
+      String sharedFilePath = await _platform.invokeMethod("getSharedFile");
+      if (sharedFilePath != null) {
+        runUpload(File(sharedFilePath));
+      }
     });
+  }
+
+  void pickFileAndUpload() {
+    FilePicker.getFile().then((File file) {
+      runUpload(file);
+    });
+  }
+
+  Future<void> runUpload(File file) async {
+    int size = await file.length();
+
+    setState(() {
+      pickedFile = file;
+      cancelToken = CancelToken();
+      totalBytes = size;
+    });
+
+    try {
+      Response response = await Dio().post(
+        "https://file.io",
+        cancelToken: cancelToken,
+        data: FormData.fromMap({
+          "file": await MultipartFile.fromFile(
+            file.path,
+            filename: file.path.split("/").last,
+          ),
+        }),
+        options: Options(
+          headers: {
+            Headers.contentLengthHeader: size,
+          },
+          responseType: ResponseType.json,
+        ),
+        onSendProgress: (int sent, int _) {
+          setState(() {
+            sentBytes = sent;
+          });
+        },
+      );
+
+      if (response.data["link"] != null) {
+        Share.share(
+          base64.encode(utf8.encode(response.data["link"])),
+          subject: file.path.split("/").last,
+        );
+      }
+    } on DioError catch (e) {
+      if (!CancelToken.isCancel(e)) {
+        if (e.response != null) {
+          _scaffoldKey.currentState.showSnackBar(
+            SnackBar(
+              content: Text(
+                "Service unavailable",
+              ),
+            ),
+          );
+        } else {
+          _scaffoldKey.currentState.showSnackBar(
+            SnackBar(
+              content: Text(
+                "Unable to reach the server",
+              ),
+            ),
+          );
+        }
+      }
+    } finally {
+      setState(() {
+        pickedFile = null;
+        cancelToken = null;
+        totalBytes = -1;
+        sentBytes = 0;
+      });
+    }
   }
 
   @override
@@ -149,16 +231,18 @@ class UploaderWidgetState extends State<UploaderWidget> {
             Align(
               alignment: Alignment.center,
               child: InkWell(
-                onTap: () async {
+                onTap: () {
                   if (!permissionsGranted) {
                     _scaffoldKey.currentState.showSnackBar(
                       SnackBar(
                         content: Text(
-                          "¯\\_(ツ)_/¯",
+                          "I need that storage permission yesterday.",
                         ),
                       ),
                     );
 
+                    Future.delayed(
+                        Duration(milliseconds: 800), openAppSettings);
                     return;
                   }
 
@@ -167,72 +251,7 @@ class UploaderWidgetState extends State<UploaderWidget> {
                     return;
                   }
 
-                  File file = await FilePicker.getFile();
-                  int size = await file.length();
-
-                  setState(() {
-                    pickedFile = file;
-                    cancelToken = CancelToken();
-                    totalBytes = size;
-                  });
-
-                  try {
-                    final response = await Dio().post(
-                      "https://file.io",
-                      cancelToken: cancelToken,
-                      data: FormData.fromMap({
-                        "file": await MultipartFile.fromFile(
-                          file.path,
-                          filename: file.path.split("/").last,
-                        ),
-                      }),
-                      options: Options(
-                        headers: {
-                          Headers.contentLengthHeader: size,
-                        },
-                        responseType: ResponseType.json,
-                      ),
-                      onSendProgress: (int sent, int _) {
-                        setState(() {
-                          sentBytes = sent;
-                        });
-                      },
-                    );
-
-                    if (response.data["link"] != null) {
-                      Share.share(
-                        base64.encode(utf8.encode(response.data["link"])),
-                        subject: file.path.split("/").last,
-                      );
-                    }
-                  } on DioError catch (e) {
-                    if (!CancelToken.isCancel(e)) {
-                      if (e.response != null) {
-                        _scaffoldKey.currentState.showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              "Service unavailable",
-                            ),
-                          ),
-                        );
-                      } else {
-                        _scaffoldKey.currentState.showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              "Unable to reach the server",
-                            ),
-                          ),
-                        );
-                      }
-                    }
-                  } finally {
-                    setState(() {
-                      pickedFile = null;
-                      cancelToken = null;
-                      totalBytes = -1;
-                      sentBytes = 0;
-                    });
-                  }
+                  pickFileAndUpload();
                 },
                 customBorder: CircleBorder(),
                 child: Container(
