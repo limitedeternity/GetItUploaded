@@ -20,8 +20,12 @@ import android.widget.Toast;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+
+import org.apache.commons.io.FileUtils;
 
 import io.flutter.app.FlutterActivity;
 import io.flutter.plugin.common.ActivityLifecycleListener;
@@ -31,11 +35,11 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugins.GeneratedPluginRegistrant;
 
 
-class FileUtils {
+class UriUtils {
     private Uri contentUri = null;
     private Context context;
 
-    public FileUtils(Context context) {
+    public UriUtils(Context context) {
         this.context = context;
     }
 
@@ -398,9 +402,33 @@ public class MainActivity extends FlutterActivity {
     void handleParcel(Intent intent) {
         Uri uri = (Uri) intent.getParcelableExtra(Intent.EXTRA_STREAM);
         if (uri != null) {
-            filePath = new FileUtils(getApplicationContext()).getPath(uri);
-        } else {
-            Toast.makeText(getApplicationContext(), "Not a file", Toast.LENGTH_LONG).show();
+            filePath = new UriUtils(getApplicationContext()).getPath(uri);
+            return;
         }
+        
+        String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
+        if (sharedText != null && !sharedText.isEmpty()) {
+            try {
+                File cacheDir = getApplicationContext().getCacheDir();
+                if (cacheDir.exists()) {
+                    FileUtils.cleanDirectory(cacheDir);
+                } else {
+                    FileUtils.forceMkdir(cacheDir);
+                }
+
+                File outputFile = File.createTempFile(UUID.randomUUID().toString().replace("-", ""), ".txt", cacheDir);
+                try (FileOutputStream os = new FileOutputStream(outputFile)) {
+                    os.write(sharedText.getBytes(), 0, sharedText.length());
+                }
+
+                filePath = outputFile.getPath();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                return;
+            }
+        }
+        
+        Toast.makeText(getApplicationContext(), "Not supported", Toast.LENGTH_LONG).show();
     }
 }
