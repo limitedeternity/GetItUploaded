@@ -90,7 +90,8 @@ class UploaderWidgetState extends State<UploaderWidget> {
 
       if (response.data["link"] != null) {
         Share.share(
-          base64.encode(utf8.encode(response.data["link"])),
+          "https://bdb64.herokuapp.com/?decode=" +
+              base64.encode(utf8.encode(response.data["link"])),
           subject: file.path.split("/").last,
         );
       }
